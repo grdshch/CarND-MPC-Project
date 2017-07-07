@@ -98,8 +98,20 @@ int main() {
           * Both are in between [-1, 1].
           *
           */
-          double steer_value;
-          double throttle_value;
+
+          Eigen::VectorXd state(4);
+          state << px, py, psi, v;
+          Eigen::VectorXd coeffs(2);
+          coeffs << 1, 1;
+
+          vector<double> solution = mpc.Solve(state, coeffs);
+
+          double steer_value = solution[0] / deg2rad(25);
+          steer_value = std::min(steer_value, 1.);
+          steer_value = std::max(steer_value, -1.);
+          double throttle_value = solution[1];
+          throttle_value = std::min(throttle_value, 1.);
+          throttle_value = std::max(throttle_value, -1.);
 
           json msgJson;
           // NOTE: Remember to divide by deg2rad(25) before you send the steering value back.
