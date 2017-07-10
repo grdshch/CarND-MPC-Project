@@ -44,25 +44,40 @@ double polyeval(Eigen::VectorXd coeffs, double x) {
 // Fit a polynomial.
 // Adapted from
 // https://github.com/JuliaMath/Polynomials.jl/blob/master/src/Polynomials.jl#L676-L716
-Eigen::VectorXd polyfit(Eigen::VectorXd xvals, Eigen::VectorXd yvals,
-                        int order) {
+Eigen::VectorXd polyfit(std::vector<double> xvals, std::vector<double> yvals,
+                        unsigned int order) {
   assert(xvals.size() == yvals.size());
   assert(order >= 1 && order <= xvals.size() - 1);
   Eigen::MatrixXd A(xvals.size(), order + 1);
 
-  for (int i = 0; i < xvals.size(); i++) {
+  Eigen::VectorXd y(yvals.size());
+
+  for (unsigned int i = 0; i < xvals.size(); i++) {
     A(i, 0) = 1.0;
+    y(i) = yvals[i];
   }
 
-  for (int j = 0; j < xvals.size(); j++) {
-    for (int i = 0; i < order; i++) {
-      A(j, i + 1) = A(j, i) * xvals(j);
+  for (unsigned int j = 0; j < xvals.size(); j++) {
+    for (unsigned int i = 0; i < order; i++) {
+      A(j, i + 1) = A(j, i) * xvals[j];
     }
   }
 
   auto Q = A.householderQr();
-  auto result = Q.solve(yvals);
+  auto result = Q.solve(y);
   return result;
+}
+
+double get_y(Eigen::VectorXd coeffs, double x) {
+  return coeffs[0]  + coeffs[1] * x + coeffs[2] * std::pow(x, 2) + coeffs[3] * std::pow(x, 3);
+}
+
+std::pair<double, double> globalToVehicle(double gx, double gy, double vx, double vy, double psi) {
+  double dx = gx - vx;
+  double dy = gy - vy;
+  double x = dx * std::cos(psi) + dy * std::sin(psi);
+  double y = - dx * std::sin(psi) + dy * std::cos(psi);
+  return std::make_pair(x, y);
 }
 
 int main() {
@@ -92,6 +107,13 @@ int main() {
           double psi = j[1]["psi"];
           double v = j[1]["speed"];
 
+          vector<double> vptsx;
+          vector<double> vptsy;
+          for (unsigned i = 0; i < ptsx.size(); ++i) {
+            auto p = globalToVehicle(ptsx[i], ptsy[i], px, py, psi);
+            vptsx.push_back(p.first);
+            vptsy.push_back(p.second);
+          }
           /*
           * TODO: Calculate steering angle and throttle using MPC.
           *
@@ -101,8 +123,7 @@ int main() {
 
           Eigen::VectorXd state(4);
           state << px, py, psi, v;
-          Eigen::VectorXd coeffs(2);
-          coeffs << 1, 1;
+          Eigen::VectorXd coeffs = polyfit(ptsx, ptsy, 3);
 
           vector<double> solution = mpc.Solve(state, coeffs);
 
@@ -126,19 +147,21 @@ int main() {
           //.. add (x,y) points to list here, points are in reference to the vehicle's coordinate system
           // the points in the simulator are connected by a Green line
 
+          for (unsigned int i = 0; i < ptsx.size(); ++i) {
+            double gy = get_y(coeffs, ptsx[i]);
+            auto p = globalToVehicle(ptsx[i], gy, px, py, psi);
+            mpc_x_vals.push_back(p.first);
+            mpc_y_vals.push_back(p.second);
+          }
+
           msgJson["mpc_x"] = mpc_x_vals;
           msgJson["mpc_y"] = mpc_y_vals;
 
           //Display the waypoints/reference line
           vector<double> next_x_vals;
           vector<double> next_y_vals;
-
-          //.. add (x,y) points to list here, points are in reference to the vehicle's coordinate system
-          // the points in the simulator are connected by a Yellow line
-
-          msgJson["next_x"] = next_x_vals;
-          msgJson["next_y"] = next_y_vals;
-
+          msgJson["next_x"] = vptsx;
+          msgJson["next_y"] = vptsy;
 
           auto msg = "42[\"steer\"," + msgJson.dump() + "]";
           std::cout << msg << std::endl;
