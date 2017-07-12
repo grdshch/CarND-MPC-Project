@@ -114,16 +114,16 @@ int main() {
             vptsx.push_back(p.first);
             vptsy.push_back(p.second);
           }
-          /*
-          * TODO: Calculate steering angle and throttle using MPC.
-          *
-          * Both are in between [-1, 1].
-          *
-          */
 
-          Eigen::VectorXd state(4);
-          state << px, py, psi, v;
           Eigen::VectorXd coeffs = polyfit(ptsx, ptsy, 3);
+          double cte = polyeval(coeffs, px) - py;
+          double slope = std::atan(coeffs[1] + 2 * coeffs[2] * px + 3 * coeffs[3] * std::pow(px, 2));
+          if (psi > M_PI / 2.) slope += M_PI;
+          double epsi = psi - slope;
+          std::cout << "PSI1 = " << psi << std::endl;
+          std::cout << "PSI2 = " << slope << std::endl;
+          Eigen::VectorXd state(6);
+          state << px, py, psi, v, cte, epsi;
 
           vector<double> solution = mpc.Solve(state, coeffs);
 
@@ -143,16 +143,13 @@ int main() {
           //Display the MPC predicted trajectory 
           vector<double> mpc_x_vals;
           vector<double> mpc_y_vals;
-
-          //.. add (x,y) points to list here, points are in reference to the vehicle's coordinate system
-          // the points in the simulator are connected by a Green line
-
-          for (unsigned int i = 0; i < ptsx.size(); ++i) {
-            double gy = get_y(coeffs, ptsx[i]);
-            auto p = globalToVehicle(ptsx[i], gy, px, py, psi);
+          for (size_t i = 0; i < mpc.predicted_x_.size(); ++i) {
+            auto p = globalToVehicle(mpc.predicted_x_[i], mpc.predicted_y_[i], px, py, psi);
             mpc_x_vals.push_back(p.first);
             mpc_y_vals.push_back(p.second);
           }
+          //mpc_x_vals = mpc.predicted_x_;
+          //mpc_y_vals = mpc.predicted_y_;
 
           msgJson["mpc_x"] = mpc_x_vals;
           msgJson["mpc_y"] = mpc_y_vals;
@@ -160,8 +157,14 @@ int main() {
           //Display the waypoints/reference line
           vector<double> next_x_vals;
           vector<double> next_y_vals;
-          msgJson["next_x"] = vptsx;
-          msgJson["next_y"] = vptsy;
+          for (size_t i = 0; i < ptsx.size(); ++i) {
+            double gy = get_y(coeffs, ptsx[i]);
+            auto p = globalToVehicle(ptsx[i], gy, px, py, psi);
+            next_x_vals.push_back(p.first);
+            next_y_vals.push_back(p.second);
+          }
+          msgJson["next_x"] = next_x_vals;
+          msgJson["next_y"] = next_y_vals;
 
           auto msg = "42[\"steer\"," + msgJson.dump() + "]";
           std::cout << msg << std::endl;
@@ -174,7 +177,7 @@ int main() {
           //
           // NOTE: REMEMBER TO SET THIS TO 100 MILLISECONDS BEFORE
           // SUBMITTING.
-          this_thread::sleep_for(chrono::milliseconds(100));
+          this_thread::sleep_for(chrono::milliseconds(0));
           ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
         }
       } else {
