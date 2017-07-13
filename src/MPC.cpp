@@ -5,8 +5,8 @@
 
 using CppAD::AD;
 
-size_t N = 25;
-double dt = 0.1;
+size_t N = 10;
+double dt = 0.2;
 
 // The solver takes all the state variables and actuator
 // variables in a singular vector. Thus, we should to establish
@@ -21,7 +21,7 @@ size_t delta_start = epsi_start + N;
 size_t a_start = delta_start + N - 1;
 
 // The reference velocity
-double ref_v = 40;
+double ref_v = 20;
 
 // This value assumes the model presented in the classroom is used.
 //
@@ -50,14 +50,14 @@ class FG_eval {
 
     // cost based on the reference state.
     for (size_t t = 0; t < N; t++) {
-      fg[0] += CppAD::pow(vars[cte_start + t], 2);  // minimize cross track error
-      fg[0] += CppAD::pow(vars[epsi_start + t], 2) * 1000;  // minimize orientation error
+      fg[0] += CppAD::pow(vars[cte_start + t], 2) * 10;  // minimize cross track error
+      fg[0] += CppAD::pow(vars[epsi_start + t], 2);  // minimize orientation error
       fg[0] += CppAD::pow(vars[v_start + t] - ref_v, 2);  // keep velocity close to the reference one
     }
 
     // Minimize the use of actuators.
     for (size_t t = 0; t < N - 1; t++) {
-      fg[0] += CppAD::pow(vars[delta_start + t], 2); // make steering as small as possible
+      fg[0] += CppAD::pow(vars[delta_start + t], 2) * 10; // make steering as small as possible
       fg[0] += CppAD::pow(vars[a_start + t], 2);  // keep velocity steady
     }
 
@@ -101,16 +101,14 @@ class FG_eval {
       AD<double> a0 = vars[a_start + t - 1];
 
       AD<double> f0 = coeffs[0]  + coeffs[1] * x0 + coeffs[2] * CppAD::pow(x0, 2) + coeffs[3] * CppAD::pow(x0, 3);
-      AD<double> psides0 = CppAD::atan(coeffs[1] + 2 * coeffs[2] * x0 + 3 * coeffs[3] * CppAD::pow(x0, 2));
-      if (x1 < x0) psides0 += M_PI;
+      AD<double> psides0 = CppAD::atan(coeffs[1] + 2. * coeffs[2] * x0 + 3. * coeffs[3] * CppAD::pow(x0, 2));
 
-
-      fg[2 + x_start + t]     = x1 - (x0 + v0 * CppAD::cos(psi0) * dt);
-      fg[2 + y_start + t]     = y1 - (y0 + v0 * CppAD::sin(psi0) * dt);
-      fg[2 + psi_start + t]   = psi1 - (psi0 + v0 * delta0 / Lf * dt);
-      fg[2 + v_start + t]     = v1 - (v0 + a0 * dt);
-      fg[2 + cte_start + t]   = cte1 - ((f0 - y0) + (v0 * CppAD::sin(epsi0) * dt));
-      fg[2 + epsi_start + t]  = epsi1 - ((psi0 - psides0) + v0 * delta0 / Lf * dt);
+      fg[1 + x_start + t]     = x1 - (x0 + v0 * CppAD::cos(psi0) * dt);
+      fg[1 + y_start + t]     = y1 - (y0 + v0 * CppAD::sin(psi0) * dt);
+      fg[1 + psi_start + t]   = psi1 - (psi0 + v0 * delta0 / Lf * dt);
+      fg[1 + v_start + t]     = v1 - (v0 + a0 * dt);
+      fg[1 + cte_start + t]   = cte1 - ((f0 - y0) + (v0 * CppAD::sin(epsi0) * dt));
+      fg[1 + epsi_start + t]  = epsi1 - ((psi0 - psides0) + v0 * delta0 / Lf * dt);
     }
   }
 };
@@ -119,8 +117,8 @@ class FG_eval {
 // MPC class definition implementation.
 //
 MPC::MPC() {
-  predicted_x_.resize(N);
-  predicted_y_.resize(N);
+  predicted_x_.resize(N - 1);
+  predicted_y_.resize(N - 1);
 }
 MPC::~MPC() {}
 
@@ -234,9 +232,9 @@ vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
   auto cost = solution.obj_value;
   std::cout << "Cost " << cost << std::endl;
 
-  for (size_t i = 0; i < N; ++i) {
+  for (size_t i = 0; i < N - 1; ++i) {
     predicted_x_[i] = solution.x[x_start + i];
-    predicted_y_[i] = solution.x[x_start + i];
+    predicted_y_[i] = solution.x[y_start + i];
   }
 
   return {solution.x[delta_start], solution.x[a_start]};
