@@ -5,8 +5,8 @@
 
 using CppAD::AD;
 
-size_t N = 10;
-double dt = 0.2;
+size_t N = 20;
+double dt = 0.15;
 
 // The solver takes all the state variables and actuator
 // variables in a singular vector. Thus, we should to establish
@@ -21,7 +21,7 @@ size_t delta_start = epsi_start + N;
 size_t a_start = delta_start + N - 1;
 
 // The reference velocity
-double ref_v = 20;
+double ref_v = 40;
 
 // This value assumes the model presented in the classroom is used.
 //
