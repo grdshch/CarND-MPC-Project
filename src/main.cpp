@@ -106,6 +106,8 @@ int main() {
           double py = j[1]["y"];
           double psi = j[1]["psi"];
           double v = j[1]["speed"];
+          double angle = j[1]["steering_angle"];
+          double acc = j[1]["throttle"];
 
           vector<double> vptsx;
           vector<double> vptsy;
@@ -116,14 +118,16 @@ int main() {
           }
 
           Eigen::VectorXd coeffs = polyfit(vptsx, vptsy, 3);
-          double cte = polyeval(coeffs, 0);
+          double lattency = 0.1;
+          double predicted_x = px + v * std::cos(psi) * lattency;
+          double predicted_y = py + v * std::sin(psi) * lattency;
+          auto local_predicted = globalToVehicle(predicted_x, predicted_y, px, py, psi);
+          double cte = polyeval(coeffs, local_predicted.first) - local_predicted.second;
           std::cout << "CTE = " << cte << std::endl;
-          double slope = std::atan(coeffs[1] + 2. * coeffs[2] * px + 3. * coeffs[3] * std::pow(px, 2));
+          double slope = std::atan(coeffs[1] + 2. * coeffs[2] * local_predicted.first + 3. * coeffs[3] * std::pow(local_predicted.first, 2));
           double epsi = - slope;
-          //std::cout << "PSI1 = " << psi << std::endl;
-          //std::cout << "PSI2 = " << slope << std::endl;
           Eigen::VectorXd state(6);
-          state << 0, 0, 0, v, cte, epsi;
+          state << local_predicted.first, local_predicted.second, -angle * v * lattency / 2.67, v + acc * lattency, cte, epsi;
 
           vector<double> solution = mpc.Solve(state, coeffs);
 
@@ -166,11 +170,11 @@ int main() {
           //Display the waypoints/reference line
           vector<double> next_x_vals;
           vector<double> next_y_vals;
-          for (size_t i = 0; i < ptsx.size(); ++i) {
-            double gy = get_y(coeffs, ptsx[i]);
-            auto p = globalToVehicle(ptsx[i], ptsy[i], px, py, psi);
-            next_x_vals.push_back(p.first);
-            next_y_vals.push_back(p.second);
+          for (size_t i = 0; i < vptsx.size(); ++i) {
+            double gy = get_y(coeffs, vptsx[i]);
+            //auto p = globalToVehicle(ptsx[i], ptsy[i], px, py, psi);
+            next_x_vals.push_back(vptsx[i]);
+            next_y_vals.push_back(gy);
           }
           msgJson["next_x"] = next_x_vals;
           msgJson["next_y"] = next_y_vals;
@@ -186,7 +190,7 @@ int main() {
           //
           // NOTE: REMEMBER TO SET THIS TO 100 MILLISECONDS BEFORE
           // SUBMITTING.
-          this_thread::sleep_for(chrono::milliseconds(0));
+          this_thread::sleep_for(chrono::milliseconds(100));
           ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
         }
       } else {
