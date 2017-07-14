@@ -72,13 +72,14 @@ double get_y(Eigen::VectorXd coeffs, double x) {
   return coeffs[0]  + coeffs[1] * x + coeffs[2] * x * x + coeffs[3] * x * x * x;
 }
 
-std::pair<double, double> globalToVehicle(double gx, double gy, double vx, double vy, double psi) {
+void globalToVehicle(double gx, double gy, double vx, double vy, double psi, double& x, double& y) {
   double dx = gx - vx;
   double dy = gy - vy;
-  double x = dx * std::cos(psi) + dy * std::sin(psi);
-  double y = - dx * std::sin(psi) + dy * std::cos(psi);
-  return std::make_pair(x, y);
+  x = dx * std::cos(psi) + dy * std::sin(psi);
+  y = - dx * std::sin(psi) + dy * std::cos(psi);
 }
+
+const double Lf = 2.67;
 
 int main() {
   uWS::Hub h;
@@ -109,72 +110,57 @@ int main() {
           double angle = j[1]["steering_angle"];
           double acc = j[1]["throttle"];
 
+          double x, y;
+
+          // converting waypoints to local vehicle's coordinates
           vector<double> vptsx;
           vector<double> vptsy;
           for (unsigned i = 0; i < ptsx.size(); ++i) {
-            auto p = globalToVehicle(ptsx[i], ptsy[i], px, py, psi);
-            vptsx.push_back(p.first);
-            vptsy.push_back(p.second);
+            globalToVehicle(ptsx[i], ptsy[i], px, py, psi, x, y);
+            vptsx.push_back(x);
+            vptsy.push_back(y);
           }
 
           Eigen::VectorXd coeffs = polyfit(vptsx, vptsy, 3);
-          double lattency = 0.1;
-          double predicted_x = px + v * std::cos(psi) * lattency;
-          double predicted_y = py + v * std::sin(psi) * lattency;
-          auto local_predicted = globalToVehicle(predicted_x, predicted_y, px, py, psi);
-          double cte = polyeval(coeffs, local_predicted.first) - local_predicted.second;
-          std::cout << "CTE = " << cte << std::endl;
-          double slope = std::atan(coeffs[1] + 2. * coeffs[2] * local_predicted.first + 3. * coeffs[3] * std::pow(local_predicted.first, 2));
+
+          // predicting state due to latency
+          double latency = 0.1;
+          double predicted_x = px + v * std::cos(psi) * latency;
+          double predicted_y = py + v * std::sin(psi) * latency;
+          globalToVehicle(predicted_x, predicted_y, px, py, psi, x, y);
+          double cte = polyeval(coeffs, x) - y;
+          double slope = std::atan(coeffs[1] + 2. * coeffs[2] * x + 3. * coeffs[3] * x * x);
           double epsi = - slope;
+
+          // state to use in MPC
           Eigen::VectorXd state(6);
-          state << local_predicted.first, local_predicted.second, -angle * v * lattency / 2.67, v + acc * lattency, cte, epsi;
+          state << x, y, - angle * v * latency / Lf, v + acc * latency, cte, epsi;
 
           vector<double> solution = mpc.Solve(state, coeffs);
 
           double steer_value = solution[0] / deg2rad(25);
           steer_value = std::min(steer_value, 1.);
           steer_value = std::max(steer_value, -1.);
+
           double throttle_value = solution[1];
           throttle_value = std::min(throttle_value, 1.);
           throttle_value = std::max(throttle_value, -1.);
 
           json msgJson;
-          // NOTE: Remember to divide by deg2rad(25) before you send the steering value back.
-          // Otherwise the values will be in between [-deg2rad(25), deg2rad(25] instead of [-1, 1].
           msgJson["steering_angle"] = - steer_value;
           msgJson["throttle"] = throttle_value;
 
           //Display the MPC predicted trajectory 
-          vector<double> mpc_x_vals;
-          vector<double> mpc_y_vals;
-          for (size_t i = 0; i < mpc.predicted_x_.size(); ++i) {
-            auto p = globalToVehicle(mpc.predicted_x_[i], mpc.predicted_y_[i], px, py, psi);
-            mpc_x_vals.push_back(p.first);
-            mpc_y_vals.push_back(p.second);
-          }
-          for (size_t i = 0; i < vptsx.size(); ++i) {
-            std::cout << vptsx[i] << ", ";
-          }
-          std::cout << std::endl;
-          for (size_t i = 0; i < vptsx.size(); ++i) {
-            std::cout << vptsy[i] << ", ";
-          }
-          std::cout << std::endl;
-          std::cout << coeffs[0] << ", " << coeffs[1] << ", " << coeffs[2] << ", " << coeffs[3] << std::endl;
-          mpc_x_vals = mpc.predicted_x_;
-          mpc_y_vals = mpc.predicted_y_;
-
-          msgJson["mpc_x"] = mpc_x_vals;
-          msgJson["mpc_y"] = mpc_y_vals;
+          msgJson["mpc_x"] = mpc.predicted_x_;
+          msgJson["mpc_y"] = mpc.predicted_y_;
 
           //Display the waypoints/reference line
           vector<double> next_x_vals;
           vector<double> next_y_vals;
           for (size_t i = 0; i < vptsx.size(); ++i) {
-            double gy = get_y(coeffs, vptsx[i]);
-            //auto p = globalToVehicle(ptsx[i], ptsy[i], px, py, psi);
+            double vpy = get_y(coeffs, vptsx[i]);
             next_x_vals.push_back(vptsx[i]);
-            next_y_vals.push_back(gy);
+            next_y_vals.push_back(vpy);
           }
           msgJson["next_x"] = next_x_vals;
           msgJson["next_y"] = next_y_vals;

@@ -57,7 +57,7 @@ class FG_eval {
 
     // Minimize the use of actuators.
     for (size_t t = 0; t < N - 1; t++) {
-      fg[0] += CppAD::pow(vars[delta_start + t], 2) * 10; // make steering as small as possible
+      fg[0] += CppAD::pow(vars[delta_start + t], 2); // make steering as small as possible
       fg[0] += CppAD::pow(vars[a_start + t], 2);  // keep velocity steady
     }
 
